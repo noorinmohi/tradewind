@@ -13,7 +13,9 @@ services:
     runtime: node
     plan: free
     branch: main # change if you deploy from a different branch
-    buildCommand: npm ci && npm run build
+    # --include=dev is required: NODE_ENV=production (below) would otherwise make
+    # npm skip devDependencies, and the build tool (vite) lives there.
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: node server.js
     healthCheckPath: /
     envVars:
