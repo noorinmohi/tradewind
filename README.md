@@ -133,6 +133,8 @@ use `npm run serve` when you just want to use the tool.
 
 ## Deploy (share a public URL)
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/noorinmohi/tradewind)
+
 The default deploy is **analysis-only**: no API key on the server, so there is
 nothing to abuse and no per-request cost — safe to hand to a friend. The
 indicators, signal, and risk plan all work; the AI-read card is simply hidden
