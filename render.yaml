@@ -19,6 +19,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NODE_VERSION
+        value: "20"
       # Render injects PORT automatically; server.js already reads process.env.PORT.
       #
       # To enable the AI read later (this will spend your Anthropic credits on

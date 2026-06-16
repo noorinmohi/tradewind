@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "A futures analysis desk: technical signals + an AI read, for you to review. It never places trades.",
+  "engines": {
+    "node": ">=18.18.0"
+  },
   "scripts": {
     "dev": "concurrently -n web,api -c cyan,magenta \"vite\" \"node --env-file-if-exists=.env server.js\"",
     "build": "vite build",
