@@ -1,0 +1,13 @@
+# Local container test of the production image (analysis-only by default).
+#   docker compose up --build      # then open http://localhost:3001
+#
+# To try the AI read in the container, uncomment the env line and provide a key
+# via your shell or a .env file next to this one (it is NOT baked into the image).
+services:
+  tradewind:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}

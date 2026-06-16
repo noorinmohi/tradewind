@@ -1,0 +1,27 @@
+# Render Blueprint (infra-as-code) for Tradewind.
+# Docs: https://render.com/docs/blueprint-spec
+#
+# To use: push this repo to GitHub, then in the Render dashboard choose
+# New → Blueprint and point it at the repo. Render reads this file and
+# provisions the service below — you don't set anything by hand.
+#
+# This is the ANALYSIS-ONLY configuration: no API key, nothing to abuse, free to
+# share. The indicators, signal, and risk plan all work; the AI read is hidden.
+services:
+  - type: web
+    name: tradewind
+    runtime: node
+    plan: free
+    branch: main # change if you deploy from a different branch
+    buildCommand: npm ci && npm run build
+    startCommand: node server.js
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Render injects PORT automatically; server.js already reads process.env.PORT.
+      #
+      # To enable the AI read later (this will spend your Anthropic credits on
+      # every request — gate or cap it first), add the key as a dashboard secret:
+      # - key: ANTHROPIC_API_KEY
+      #   sync: false   # set the value in the dashboard, never commit it
