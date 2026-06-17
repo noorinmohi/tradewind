@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
   TrendingUp, TrendingDown, Minus, Activity, ShieldAlert, Loader2,
-  ArrowUpRight, ArrowDownRight, Gauge, Sparkles, Info, RefreshCw,
+  ArrowUpRight, ArrowDownRight, Gauge, Sparkles, Info, RefreshCw, Layers, Calculator,
 } from "lucide-react";
 import { analyze, getContracts } from "./api.js";
+import { analyzeStrategy, STRATEGIES } from "./lib/options.js";
 
 // ── Design tokens ───────────────────────────────────────────────
 const C = {
@@ -182,6 +183,224 @@ function Disclaimer() {
   );
 }
 
+// ── Options ─────────────────────────────────────────────────────
+function niceStrike(x) {
+  if (!isFinite(x) || x <= 0) return 0;
+  if (x >= 1000) return Math.round(x / 5) * 5;
+  if (x >= 100) return Math.round(x);
+  if (x >= 10) return Math.round(x * 2) / 2;
+  return Math.round(x * 100) / 100;
+}
+
+function PayoffChart({ curve, S, breakevens }) {
+  const W = 600, H = 240, padL = 8, padR = 8, padT = 14, padB = 22;
+  const prices = curve.map((c) => c.price);
+  const pnls = curve.map((c) => c.pnl);
+  const pMin = Math.min(...prices), pMax = Math.max(...prices);
+  const yMin = Math.min(0, ...pnls), yMax = Math.max(0, ...pnls);
+  const sx = (p) => padL + ((p - pMin) / (pMax - pMin || 1)) * (W - padL - padR);
+  const sy = (y) => padT + (1 - (y - yMin) / (yMax - yMin || 1)) * (H - padT - padB);
+  const y0 = sy(0);
+
+  // Colored line segments: green where profitable, red where not.
+  const segs = [];
+  for (let i = 1; i < curve.length; i++) {
+    const a = curve[i - 1], b = curve[i];
+    const up = (a.pnl + b.pnl) / 2 >= 0;
+    segs.push(<line key={i} x1={sx(a.price)} y1={sy(a.pnl)} x2={sx(b.price)} y2={sy(b.pnl)} stroke={up ? C.up : C.down} strokeWidth={2} />);
+  }
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: 220, display: "block" }}>
+      {/* zero P&L baseline */}
+      <line x1={padL} y1={y0} x2={W - padR} y2={y0} stroke={C.inkFaint} strokeWidth={1} strokeDasharray="3 3" />
+      <text x={padL + 2} y={y0 - 4} fontSize="10" fill={C.inkFaint} fontFamily={MONO}>$0</text>
+      {/* current underlying */}
+      {S > pMin && S < pMax && (
+        <>
+          <line x1={sx(S)} y1={padT} x2={sx(S)} y2={H - padB} stroke={C.accent} strokeWidth={1} strokeDasharray="2 3" opacity={0.7} />
+          <text x={sx(S)} y={H - 8} fontSize="10" fill={C.accent} fontFamily={MONO} textAnchor="middle">now {fmt(S, 2)}</text>
+        </>
+      )}
+      {/* breakevens */}
+      {breakevens.filter((b) => b > pMin && b < pMax).map((b, i) => (
+        <g key={i}>
+          <line x1={sx(b)} y1={padT} x2={sx(b)} y2={H - padB} stroke={C.flat} strokeWidth={1} strokeDasharray="1 3" opacity={0.8} />
+          <circle cx={sx(b)} cy={y0} r={3} fill={C.flat} />
+        </g>
+      ))}
+      {segs}
+    </svg>
+  );
+}
+
+function OptionsPanel({ underlying, contractLabel, inputStyle, labelStyle }) {
+  const baseS = underlying && underlying > 0 ? niceStrike(underlying) : 100;
+  const [strategy, setStrategy] = useState("long_call");
+  const [S, setS] = useState(baseS);
+  const [K1, setK1] = useState(niceStrike(baseS * 0.95));
+  const [K2, setK2] = useState(niceStrike(baseS * 1.05));
+  const [W, setW] = useState(Math.max(niceStrike(baseS * 0.05), 0.01));
+  const [dte, setDte] = useState(30);
+  const [iv, setIv] = useState(30);
+  const [rate, setRate] = useState(4);
+  const [mult, setMult] = useState(100);
+
+  const fields = STRATEGIES[strategy].fields;
+  const result = useMemo(() => {
+    try {
+      return analyzeStrategy(strategy, { S, K1, K2, W, dte, r: rate, sigma: iv, multiplier: mult });
+    } catch {
+      return null;
+    }
+  }, [strategy, S, K1, K2, W, dte, iv, rate, mult]);
+
+  const money = (v) =>
+    v === Infinity ? "Unlimited" : v === -Infinity ? "Unlimited risk" : fmtUSD(v);
+  const num = (set) => (e) => set(e.target.value === "" ? "" : Number(e.target.value));
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 20 }}>
+      <Card>
+        <CardTitle icon={Calculator}>Options strategy</CardTitle>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12 }}>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={labelStyle}>Strategy</label>
+            <select style={inputStyle} value={strategy} onChange={(e) => setStrategy(e.target.value)}>
+              {Object.entries(STRATEGIES).map(([k, s]) => (
+                <option key={k} value={k}>{s.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Underlying price</label>
+            <input style={inputStyle} type="number" value={S} onChange={num(setS)} />
+            {underlying > 0 && niceStrike(underlying) !== S && (
+              <button
+                onClick={() => setS(niceStrike(underlying))}
+                style={{ marginTop: 4, background: "none", border: "none", color: C.accent, fontSize: 11, cursor: "pointer", padding: 0, fontFamily: SANS }}
+              >
+                ↺ use {contractLabel ? `${contractLabel.split(" · ")[0]} ` : ""}{fmt(underlying, 2)}
+              </button>
+            )}
+          </div>
+          {fields.includes("K1") && (
+            <div>
+              <label style={labelStyle}>{fields.includes("K2") ? "Lower strike" : "Strike"}</label>
+              <input style={inputStyle} type="number" value={K1} onChange={num(setK1)} />
+            </div>
+          )}
+          {fields.includes("K2") && (
+            <div>
+              <label style={labelStyle}>{fields.includes("K1") ? "Upper strike" : "Call strike"}</label>
+              <input style={inputStyle} type="number" value={K2} onChange={num(setK2)} />
+            </div>
+          )}
+          {fields.includes("W") && (
+            <div>
+              <label style={labelStyle}>Wing width</label>
+              <input style={inputStyle} type="number" value={W} onChange={num(setW)} />
+            </div>
+          )}
+          <div>
+            <label style={labelStyle}>Days to expiry</label>
+            <input style={inputStyle} type="number" min="0" value={dte} onChange={num(setDte)} />
+          </div>
+          <div>
+            <label style={labelStyle}>Implied vol (%)</label>
+            <input style={inputStyle} type="number" min="0" value={iv} onChange={num(setIv)} />
+          </div>
+          <div>
+            <label style={labelStyle}>Rate (%)</label>
+            <input style={inputStyle} type="number" value={rate} onChange={num(setRate)} />
+          </div>
+          <div>
+            <label style={labelStyle}>Contract multiplier</label>
+            <input style={inputStyle} type="number" min="1" value={mult} onChange={num(setMult)} />
+          </div>
+        </div>
+      </Card>
+
+      {result && (
+        <>
+          <Card>
+            <CardTitle icon={Layers}>
+              {STRATEGIES[strategy].label}
+              <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: C.inkFaint, marginLeft: 8 }}>
+                payoff at expiration
+              </span>
+            </CardTitle>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10, marginBottom: 14 }}>
+              <Stat
+                label={result.netCost >= 0 ? "Net debit (you pay)" : "Net credit (you get)"}
+                value={fmtUSD(Math.abs(result.netCost))}
+                color={result.netCost >= 0 ? C.down : C.up}
+              />
+              <Stat label="Max profit" value={money(result.maxProfit)} color={C.up} />
+              <Stat label="Max loss" value={money(result.maxLoss)} color={C.down} />
+              <Stat
+                label={`Breakeven${result.breakevens.length === 1 ? "" : "s"}`}
+                value={result.breakevens.length ? result.breakevens.map((b) => fmt(b, 2)).join(" / ") : "—"}
+              />
+            </div>
+            <PayoffChart curve={result.curve} S={S} breakevens={result.breakevens} />
+          </Card>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <Card>
+              <CardTitle icon={Gauge}>Net Greeks</CardTitle>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <Stat label="Delta" value={fmt(result.netGreeks.delta, 1)} sub="per $1 underlying" />
+                <Stat label="Gamma" value={fmt(result.netGreeks.gamma, 3)} sub="delta per $1" />
+                <Stat label="Theta" value={fmtUSD(result.netGreeks.theta)} sub="per day" color={result.netGreeks.theta >= 0 ? C.up : C.down} />
+                <Stat label="Vega" value={fmtUSD(result.netGreeks.vega)} sub="per 1% IV" />
+              </div>
+            </Card>
+            <Card>
+              <CardTitle icon={Activity}>Legs</CardTitle>
+              <div style={{ fontSize: 12.5, color: C.inkSoft, lineHeight: 1.8, fontFamily: MONO }}>
+                {result.legs.map((l, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: l.position > 0 ? C.up : C.down }}>
+                      {l.position > 0 ? "Long" : "Short"}{" "}
+                      {l.kind === "stock" ? "underlying" : `${l.K} ${l.type}`}
+                    </span>
+                    <span style={{ color: C.inkFaint }}>
+                      {l.kind === "stock" ? `@ ${fmt(l.entry, 2)}` : `@ ${fmt(l.premium, 2)}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              alignItems: "flex-start",
+              background: C.flatSoft,
+              border: `1px solid ${C.flat}33`,
+              borderRadius: 12,
+              padding: "12px 14px",
+              color: C.inkSoft,
+              fontSize: 12.5,
+              lineHeight: 1.5,
+            }}
+          >
+            <Info size={16} color={C.flat} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>
+              <strong style={{ color: C.ink }}>Theoretical, not quotes.</strong> Premiums are Black-Scholes
+              estimates from the IV you enter (European-style, no dividends) — real option prices differ. This
+              shows a strategy's shape and risk for you to study; it is not advice and places no trades.
+            </span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── App ─────────────────────────────────────────────────────────
 export default function App() {
   const [contracts, setContracts] = useState(null);
@@ -196,6 +415,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [data, setData] = useState(null);
+  const [view, setView] = useState("desk"); // "desk" | "options"
 
   useEffect(() => {
     getContracts()
@@ -270,10 +490,42 @@ export default function App() {
           </div>
           <div>
             <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: -0.3 }}>Tradewind</div>
-            <div style={{ fontSize: 12.5, color: C.inkSoft }}>Futures analysis desk — signals to review, not orders to place</div>
+            <div style={{ fontSize: 12.5, color: C.inkSoft }}>Analysis to review — never orders to place</div>
           </div>
         </div>
 
+        {/* Tabs */}
+        <div style={{ display: "flex", gap: 4, marginTop: 18, borderBottom: `1px solid ${C.line}` }}>
+          {[
+            { key: "desk", label: "Futures desk", Icon: Activity },
+            { key: "options", label: "Options", Icon: Layers },
+          ].map(({ key, label, Icon }) => (
+            <button
+              key={key}
+              onClick={() => setView(key)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+                background: "none",
+                border: "none",
+                borderBottom: `2px solid ${view === key ? C.accent : "transparent"}`,
+                color: view === key ? C.ink : C.inkSoft,
+                fontSize: 14,
+                fontWeight: 600,
+                fontFamily: SANS,
+                padding: "10px 14px",
+                marginBottom: -1,
+                cursor: "pointer",
+              }}
+            >
+              <Icon size={15} /> {label}
+            </button>
+          ))}
+        </div>
+
+        {view === "desk" && (
+        <>
         {/* Controls */}
         <Card style={{ marginTop: 20, marginBottom: 16 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 0.9fr", gap: 12, alignItems: "end" }}>
@@ -499,6 +751,17 @@ export default function App() {
 
             <Disclaimer />
           </div>
+        )}
+        </>
+        )}
+
+        {view === "options" && (
+          <OptionsPanel
+            underlying={data?.price}
+            contractLabel={data ? `${data.symbol.replace("=F", "")} · ${data.name}` : null}
+            inputStyle={inputStyle}
+            labelStyle={labelStyle}
+          />
         )}
       </div>
 

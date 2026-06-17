@@ -41,6 +41,7 @@ export const CONTRACTS = {
 
   // ── Energy ──
   "CL=F": { name: "Crude Oil (WTI)", group: "Energy", pointValue: 1000, tick: 0.01, yahoo: "CL=F", root: "CL" },
+  "BZ=F": { name: "Brent Crude Oil", group: "Energy", pointValue: 1000, tick: 0.01, yahoo: "BZ=F", root: "BZ" },
   "NG=F": { name: "Natural Gas", group: "Energy", pointValue: 10000, tick: 0.001, yahoo: "NG=F", root: "NG" },
   "MCL=F": { name: "Micro WTI Crude Oil", group: "Energy (Micro)", pointValue: 100, tick: 0.01, yahoo: "CL=F", root: "MCL" },
 
