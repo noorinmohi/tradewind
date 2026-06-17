@@ -65,17 +65,27 @@ By default Tradewind uses Yahoo Finance **continuous front-month** futures
 The feed lives behind a switch in `src/lib/data.js`. Pick it with `DATA_PROVIDER`:
 
 ```bash
-DATA_PROVIDER=yahoo      # default — free, delayed
-DATA_PROVIDER=databento  # real intraday feed; needs DATABENTO_API_KEY (paid)
+DATA_PROVIDER=yahoo      # default — free, delayed ~10-15 min
+DATA_PROVIDER=polygon    # real-time futures; needs POLYGON_API_KEY (paid + CME fees)
+DATA_PROVIDER=databento  # CME futures; needs DATABENTO_API_KEY (paid)
 ```
 
-A **Databento** adapter is included and written against their documented REST
-API, but it is not exercised in this repo (it needs a live key). Before trusting
-it, validate two things against your account: the continuous-contract symbology
-(`<ROOT>.c.0`) and the fixed-point price scale. Both are clearly marked in
-`src/lib/data.js`. **Adding another feed** (Polygon, IBKR, a crypto exchange) is
-one function with the signature `(spec, interval, range) => { rows, meta }`,
-registered in the `providers` map — nothing else changes.
+> **Real-time data is paid.** Free feeds are always delayed. A live futures feed
+> means a paid vendor plan **plus CME exchange fees** (there's a cheaper
+> "non-professional" tier for individuals) and a credit card. The app only needs
+> a one-line switch; the cost and entitlement are on the data vendor's side.
+
+**Polygon** and **Databento** adapters are included, written to their documented
+APIs but **not exercised in this repo** (they need live keys). When you activate
+one, confirm the futures ticker/symbology convention and the response/price
+format against the vendor's current docs — both are flagged in `src/lib/data.js`.
+**Adding another feed** (IBKR, a crypto exchange) is one function with the
+signature `(spec, interval, range) => { rows, meta }`, registered in the
+`providers` map — nothing else changes.
+
+To go live on Polygon: add `DATA_PROVIDER=polygon` and `POLYGON_API_KEY` as
+secrets in your host dashboard (e.g. Render → Environment), exactly like the AI
+keys — never in `render.yaml` (the repo is public).
 
 ## Prerequisites
 

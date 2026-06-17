@@ -124,6 +124,57 @@ async function databento(spec, interval, range) {
   };
 }
 
+// ── Polygon.io (real-time, paid; prepared but not yet exercised) ──
+// Real-time futures via Polygon's aggregates API. Set DATA_PROVIDER=polygon and
+// POLYGON_API_KEY=... — requires a paid Polygon plan WITH the CME real-time
+// futures entitlement (real-time exchange data is never free).
+//
+// ⚠ Prepared, not run in this repo (needs a live key). Polygon's Futures product
+// is newer/evolving, so when you activate it, confirm TWO things against your
+// account's current docs:
+//   1. The futures TICKER convention for the contract you want (front-month or
+//      continuous). `polygonTicker` maps from the CME root in contracts.js;
+//      override per contract via a `polygon` field if your plan differs.
+//   2. The aggregates response shape (this assumes v2-style results: t,o,h,l,c,v).
+const POLY_AGG = { "1d": [1, "day"], "1h": [1, "hour"], "15m": [15, "minute"] };
+
+function polygonTicker(spec) {
+  // Many setups use the product root (e.g. "ES"); some need an explicit contract
+  // or a continuous symbol. Override with spec.polygon when needed.
+  return spec.polygon || spec.root;
+}
+
+async function polygon(spec, interval, range) {
+  const key = process.env.POLYGON_API_KEY;
+  if (!key) throw new Error("DATA_PROVIDER=polygon but POLYGON_API_KEY is not set");
+
+  const [mult, span] = POLY_AGG[interval] || POLY_AGG["1d"];
+  const { start, end } = rangeToDates(range);
+  const ticker = polygonTicker(spec);
+  const url =
+    `https://api.polygon.io/v2/aggs/ticker/${encodeURIComponent(ticker)}` +
+    `/range/${mult}/${span}/${start}/${end}?adjusted=true&sort=asc&limit=50000`;
+
+  // Key goes in the Authorization header (not the URL) so it stays out of logs.
+  const r = await fetch(url, { headers: { Authorization: `Bearer ${key}` } });
+  if (!r.ok) throw new Error(`Polygon ${r.status}: ${(await r.text()).slice(0, 200)}`);
+
+  const j = await r.json();
+  const results = j?.results || [];
+  const rows = results
+    .filter((b) => b.o != null && b.h != null && b.l != null && b.c != null)
+    .map((b) => ({ t: b.t, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v ?? 0 }));
+
+  return {
+    rows,
+    meta: {
+      price: rows.length ? rows[rows.length - 1].c : null,
+      currency: "USD",
+      asOf: rows.length ? rows[rows.length - 1].t : Date.now(),
+    },
+  };
+}
+
 // Convert a Yahoo-style range ("5d","3mo","1y","5y") to ISO start/end dates.
 function rangeToDates(range) {
   const end = new Date();
@@ -141,7 +192,7 @@ function rangeToDates(range) {
   return { start: iso(start), end: iso(end) };
 }
 
-const providers = { yahoo, databento };
+const providers = { yahoo, databento, polygon };
 
 export function activeProvider() {
   return PROVIDER;
