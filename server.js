@@ -32,7 +32,29 @@ if (aiEnabled()) {
   console.warn(`⚠  AI read is off — provider "${aiProvider()}" has no key configured. Indicators, signal, and risk plan still work. See README to enable it.`);
 }
 
+// Optional passcode gate for the AI read (see /api/analyze). If AI_PASSCODE is
+// set, the AI summary only runs for requests that send the matching code — so a
+// shared/public URL can offer the AI read to people you give the code to,
+// without letting the open internet spend your AI quota. The free analysis
+// (signals + risk plan) is never gated.
+const AI_PASSCODE = process.env.AI_PASSCODE || "";
+if (aiEnabled() && AI_PASSCODE) console.log("  ↳ AI read is passcode-gated (AI_PASSCODE is set).");
+
+// Light per-IP rate limit on AI reads (fixed 1-minute window), so even a leaked
+// passcode can't run up unlimited calls.
+const AI_RATE_PER_MIN = Number(process.env.AI_RATE_PER_MIN || 20);
+const aiHits = new Map();
+function aiRateOk(ip) {
+  const now = Date.now();
+  let e = aiHits.get(ip);
+  if (!e || now > e.resetAt) e = { count: 0, resetAt: now + 60000 };
+  e.count += 1;
+  aiHits.set(ip, e);
+  return e.count <= AI_RATE_PER_MIN;
+}
+
 const app = express();
+app.set("trust proxy", 1); // Render runs behind a proxy; needed for real client IPs
 app.use(express.json({ limit: "1mb" }));
 
 // Market data lives in src/lib/data.js behind a provider switch (DATA_PROVIDER).
@@ -75,6 +97,7 @@ app.post("/api/analyze", async (req, res) => {
       timeframe = "daily",
       accountSize = 25000,
       riskPct = 1,
+      accessCode = "",
     } = req.body || {};
 
     const spec = CONTRACTS[symbol];
@@ -139,10 +162,18 @@ app.post("/api/analyze", async (req, res) => {
       dataNote: "Yahoo continuous front-month future, delayed ~10-15 min.",
     };
 
-    // Analysis-only deploys run with no AI provider configured: skip the model
-    // call entirely and tell the UI to hide the AI card.
-    const aiOn = aiEnabled();
-    const explanation = aiOn ? await aiRead(aiPayload) : null;
+    // Decide whether to run the (cost-bearing) AI read for this request:
+    //   off          — no AI provider key on the server (analysis-only deploy)
+    //   locked       — AI available, but this request lacks the passcode
+    //   rate_limited — passed the gate, but over the per-IP per-minute limit
+    //   on           — run it
+    let aiStatus = "off";
+    if (aiEnabled()) {
+      if (AI_PASSCODE && accessCode !== AI_PASSCODE) aiStatus = "locked";
+      else if (!aiRateOk(req.ip)) aiStatus = "rate_limited";
+      else aiStatus = "on";
+    }
+    const explanation = aiStatus === "on" ? await aiRead(aiPayload) : null;
 
     res.json({
       symbol,
@@ -150,7 +181,8 @@ app.post("/api/analyze", async (req, res) => {
       timeframe: tf.label,
       interval: tf.interval,
       provider: activeProvider(),
-      aiEnabled: aiOn,
+      aiStatus,
+      aiEnabled: aiStatus === "on",
       aiProvider: aiProvider(),
       asOf: meta.asOf || Date.now(),
       currency: meta.currency || "USD",

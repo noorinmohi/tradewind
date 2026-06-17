@@ -411,6 +411,7 @@ export default function App() {
   const [timeframe, setTimeframe] = useState(prefs.timeframe || "daily");
   const [accountSize, setAccountSize] = useState(prefs.accountSize ?? 25000);
   const [riskPct, setRiskPct] = useState(prefs.riskPct ?? 1);
+  const [accessCode, setAccessCode] = useState(prefs.accessCode || "");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -427,14 +428,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    savePrefs({ symbol, timeframe, accountSize, riskPct });
-  }, [symbol, timeframe, accountSize, riskPct]);
+    savePrefs({ symbol, timeframe, accountSize, riskPct, accessCode });
+  }, [symbol, timeframe, accountSize, riskPct, accessCode]);
 
   async function run() {
     setLoading(true);
     setError("");
     try {
-      const d = await analyze({ symbol, timeframe, accountSize: Number(accountSize), riskPct: Number(riskPct) });
+      const d = await analyze({ symbol, timeframe, accountSize: Number(accountSize), riskPct: Number(riskPct), accessCode });
       setData(d);
     } catch (e) {
       setError(e.message || "Analysis failed");
@@ -739,12 +740,52 @@ export default function App() {
               </Card>
             )}
 
-            {/* AI read — only when the server has a key (hidden on analysis-only deploys) */}
-            {data.aiEnabled && (
+            {/* AI read — gated by passcode on shared deploys; hidden entirely if
+                no AI key is configured on the server */}
+            {data.aiStatus === "on" && (
               <Card>
                 <CardTitle icon={Sparkles}>{data.aiProvider ? `AI read · ${data.aiProvider}` : "AI read"}</CardTitle>
                 <div style={{ fontSize: 13.5, lineHeight: 1.65, color: C.ink, whiteSpace: "pre-wrap" }}>
                   {data.explanation}
+                </div>
+              </Card>
+            )}
+            {data.aiStatus === "locked" && (
+              <Card>
+                <CardTitle icon={Sparkles}>AI read — locked</CardTitle>
+                <div style={{ fontSize: 13, color: C.inkSoft, lineHeight: 1.6, marginBottom: 12 }}>
+                  A plain-language AI explanation of this setup is available. Enter the access code to turn it on —
+                  ask whoever shared this link. It's saved on this device so you only enter it once.
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    style={{ ...inputStyle, maxWidth: 240 }}
+                    type="password"
+                    placeholder="access code"
+                    value={accessCode}
+                    onChange={(e) => setAccessCode(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && run()}
+                  />
+                  <button
+                    onClick={run}
+                    disabled={loading || !accessCode}
+                    style={{
+                      border: "none", borderRadius: 9, padding: "0 18px",
+                      background: loading || !accessCode ? C.panel2 : C.accent,
+                      color: loading || !accessCode ? C.inkSoft : "#0B0F14",
+                      fontSize: 13, fontWeight: 600, cursor: loading || !accessCode ? "default" : "pointer",
+                    }}
+                  >
+                    Unlock
+                  </button>
+                </div>
+              </Card>
+            )}
+            {data.aiStatus === "rate_limited" && (
+              <Card style={{ borderColor: `${C.flat}44` }}>
+                <div style={{ fontSize: 13, color: C.flat, display: "flex", gap: 8, alignItems: "center" }}>
+                  <Info size={15} /> AI read is busy (rate limit reached). The signal and risk plan above are
+                  current — try again in a minute.
                 </div>
               </Card>
             )}

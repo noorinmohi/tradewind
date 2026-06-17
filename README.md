@@ -163,12 +163,27 @@ docker run -p 3001:3001 tradewind        # http://localhost:3001
 # or: docker compose up --build
 ```
 
-**Enabling the AI read on a public deploy** — only if you gate or cap it first,
-since each request then spends your Anthropic credits. Set `ANTHROPIC_API_KEY`
-as a host secret (Render dashboard / `fly secrets set` / container env — never
-in git), and add access control (a shared passcode and/or rate limiting) so the
-open internet can't run up your bill. The app reads the key from the
-environment, so no code change is needed to turn it on.
+### Enabling the AI read on a public deploy (passcode-gated)
+
+The AI read spends your model quota on every call, so on a shared URL you should
+gate it. Tradewind has this built in: set a passcode and the **free analysis
+stays open to everyone, but the AI read only runs for visitors who enter the
+code**. There's also a per-IP rate limit in case the code leaks.
+
+In your host's **dashboard** (Render → Environment; never in git — the repo is
+public), set environment variables:
+
+| Variable | Value | Purpose |
+|---|---|---|
+| `AI_PROVIDER` | `groq` (or `gemini`/`anthropic`) | which model powers the read |
+| `GROQ_API_KEY` | your `gsk_...` key | the provider key (use the matching key var) |
+| `AI_PASSCODE` | a code you choose | required to unlock the AI read |
+| `AI_RATE_PER_MIN` | `20` (optional) | per-IP AI reads per minute |
+
+Then share the URL **and** the passcode with the people you want to have the AI
+read. They enter it once (stored on their device). Without it, they still get
+the full signals + risk plan. Leaving `AI_PASSCODE` unset means the AI read is
+open to everyone (only do that with a strict spend cap at the provider).
 
 ## Backtesting
 
